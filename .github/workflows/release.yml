@@ -10,6 +10,7 @@ permissions:
 
 env:
   TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY || format('{0}/homebrew-tap', github.repository_owner) }}
+  TAP_NAME: ${{ format('{0}/tap', github.repository_owner) }}
 
 jobs:
   release:
@@ -58,13 +59,19 @@ jobs:
             --sha256 "${{ steps.metadata.outputs.sha256 }}" \
             --output Formula/codex-ime-guard.rb
 
+      - name: Prepare local Homebrew tap
+        run: |
+          set -euo pipefail
+          brew tap-new "${TAP_NAME}"
+          cp Formula/codex-ime-guard.rb "$(brew --repository "${TAP_NAME}")/Formula/codex-ime-guard.rb"
+
       - name: Audit Homebrew formula
-        run: brew audit --strict --formula Formula/codex-ime-guard.rb
+        run: brew audit --strict --formula "${TAP_NAME}/codex-ime-guard"
 
       - name: Install Homebrew formula from source
         run: |
           set -euo pipefail
-          brew install --build-from-source Formula/codex-ime-guard.rb
+          brew install --build-from-source "${TAP_NAME}/codex-ime-guard"
           test "$(codex-ime-guard --version)" = "codex-ime-guard ${{ steps.metadata.outputs.version }}"
 
       - name: Smoke test Homebrew service definition
