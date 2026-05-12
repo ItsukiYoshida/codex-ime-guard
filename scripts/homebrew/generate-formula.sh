@@ -64,7 +64,7 @@ class CodexImeGuard < Formula
   depends_on xcode: :build
 
   def install
-    system "swift", "build", "-c", "release", "--package-path", "platforms/macos"
+    system "swift", "build", "--disable-sandbox", "-c", "release", "--package-path", "platforms/macos"
     bin.install "platforms/macos/.build/release/codex-ime-guard"
   end
 
