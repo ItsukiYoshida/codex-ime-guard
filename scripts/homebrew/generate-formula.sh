@@ -57,8 +57,7 @@ cat > "$OUTPUT" <<EOF
 class CodexImeGuard < Formula
   desc "IME guard for using Codex CLI Vim mode on macOS"
   homepage "https://github.com/$OWNER/$REPO"
-  url "https://github.com/$OWNER/$REPO/archive/refs/tags/v#{version}.tar.gz"
-  version "$VERSION"
+  url "https://github.com/$OWNER/$REPO/archive/refs/tags/v$VERSION.tar.gz"
   sha256 "$SHA256"
   license "MIT"
 
