@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LAUNCH_AGENT_LABEL__</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__APP_BINARY__</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CODEX_IME_GUARD_ASCII_SOURCE</key>
+    <string>__ASCII_SOURCE__</string>
+    <key>CODEX_IME_GUARD_APPS</key>
+    <string>__TARGET_APPS__</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__STDOUT_LOG__</string>
+  <key>StandardErrorPath</key>
+  <string>__STDERR_LOG__</string>
+</dict>
+</plist>
