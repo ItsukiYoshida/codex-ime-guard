@@ -45,3 +45,37 @@ just check
 ```
 
 このリポジトリでは Swift の formatter / linter として、Swift ツールチェーンに含まれる `swift-format` を使用します。
+
+## インストール
+
+### Homebrew
+
+Codex IME Guard は自前 Homebrew tap から配布します。
+
+```sh
+brew install ItsukiYoshida/tap/codex-ime-guard
+brew services start codex-ime-guard
+```
+
+インストール後、次の場所で `codex-ime-guard` にアクセシビリティ権限を付与してください。
+
+```text
+System Settings > Privacy & Security > Accessibility
+```
+
+停止・削除する場合:
+
+```sh
+brew services stop codex-ime-guard
+brew uninstall codex-ime-guard
+```
+
+### ローカルビルドからインストール
+
+Homebrew を使わず、この checkout から直接インストールする場合は [docs/INSTALL.md](docs/INSTALL.md) を参照してください。
+
+## Homebrew Tap の提供
+
+リリース tag を push すると、GitHub Actions が release tarball の SHA256 を計算し、`ItsukiYoshida/homebrew-tap` の `Formula/codex-ime-guard.rb` を更新します。
+
+tap の初期作成、リリース、検証手順は [docs/HOMEBREW_TAP.md](docs/HOMEBREW_TAP.md) を参照してください。

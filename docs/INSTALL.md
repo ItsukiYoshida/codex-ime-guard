@@ -4,6 +4,30 @@
 
 ## macOS
 
+### Homebrew
+
+Codex IME Guard は自前 Homebrew tap からインストールできます。
+
+```sh
+brew install ItsukiYoshida/tap/codex-ime-guard
+brew services start codex-ime-guard
+```
+
+インストール後、次の場所で `codex-ime-guard` にアクセシビリティ権限を付与してください。
+
+```text
+システム設定 > プライバシーとセキュリティ > アクセシビリティ
+```
+
+停止・削除する場合:
+
+```sh
+brew services stop codex-ime-guard
+brew uninstall codex-ime-guard
+```
+
+### ローカルビルド
+
 ```sh
 ./scripts/install.sh
 ```
