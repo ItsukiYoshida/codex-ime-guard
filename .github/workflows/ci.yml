@@ -23,5 +23,5 @@ jobs:
       - name: Verify metadata commands
         run: |
           set -euo pipefail
-          test "$(platforms/macos/.build/release/codex-ime-guard --version)" = "codex-ime-guard 0.1.0"
+          test "$(platforms/macos/.build/release/codex-ime-guard --version)" = "codex-ime-guard 0.1.1"
           test "$(platforms/macos/.build/release/codex-ime-guard --help)" = "Usage: codex-ime-guard [--version] [--help]"

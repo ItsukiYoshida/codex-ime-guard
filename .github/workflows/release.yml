@@ -1,6 +1,21 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: "Version bump type"
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      custom_version:
+        description: "Optional explicit version (e.g. 1.2.3). Leave empty to use version_bump."
+        required: false
+        type: string
   push:
     tags:
       - "v*.*.*"
@@ -19,19 +34,73 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install tools
-        run: brew install just
+        run: brew install just gnupg
+
+      - name: Ensure release dispatch runs from main
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "::error::Run manual releases from main."
+            exit 1
+          fi
+
+      - name: Configure authenticated origin
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+      - name: Fetch tags
+        run: git fetch --force --tags
+
+      - name: Bump release version
+        id: bump
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CUSTOM_VERSION: ${{ inputs.custom_version }}
+          VERSION_BUMP: ${{ inputs.version_bump }}
+        run: scripts/release/bump-version.py
 
       - name: Run project checks
         run: just check
+
+      - name: Commit and tag release version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            platforms/macos/Sources/CodexImeGuard/main.swift \
+            .github/workflows/ci.yml \
+            docs/HOMEBREW_TAP.md
+          git commit -m "Release ${RELEASE_TAG}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git tag "${RELEASE_TAG}"
+          git push origin "${RELEASE_TAG}"
 
       - name: Resolve release metadata
         id: metadata
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            tag="${{ steps.bump.outputs.tag }}"
+            version="${{ steps.bump.outputs.version }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+            version="${tag#v}"
+          fi
+
           owner="${GITHUB_REPOSITORY_OWNER}"
           repo="${GITHUB_REPOSITORY#*/}"
 
@@ -39,7 +108,17 @@ jobs:
           test "$(platforms/macos/.build/release/codex-ime-guard --version)" = "codex-ime-guard $version"
 
           tarball_url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${tag}.tar.gz"
-          sha256="$(curl -fsSL "$tarball_url" | shasum -a 256 | awk '{print $1}')"
+          for attempt in 1 2 3 4 5; do
+            if sha256="$(curl -fsSL "$tarball_url" | shasum -a 256 | awk '{print $1}')"; then
+              break
+            fi
+            sleep "$((attempt * 2))"
+          done
+
+          if [ -z "${sha256:-}" ]; then
+            echo "::error::Failed to resolve release tarball SHA256 for ${tarball_url}."
+            exit 1
+          fi
 
           {
             echo "tag=$tag"
@@ -58,6 +137,62 @@ jobs:
             --version "${{ steps.metadata.outputs.version }}" \
             --sha256 "${{ steps.metadata.outputs.sha256 }}" \
             --output Formula/codex-ime-guard.rb
+
+      - name: Import release signing key
+        env:
+          RELEASE_GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RELEASE_GPG_PRIVATE_KEY:-}" ]; then
+            echo "::error::RELEASE_GPG_PRIVATE_KEY is required to sign release assets."
+            exit 1
+          fi
+
+          export GNUPGHOME="${RUNNER_TEMP}/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf "%s" "$RELEASE_GPG_PRIVATE_KEY" | gpg --batch --import
+
+          fingerprint="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')"
+          if [ -z "$fingerprint" ]; then
+            echo "::error::No GPG secret key was imported."
+            exit 1
+          fi
+
+          {
+            echo "GNUPGHOME=$GNUPGHOME"
+            echo "RELEASE_GPG_FINGERPRINT=$fingerprint"
+          } >> "$GITHUB_ENV"
+
+      - name: Sign release assets
+        env:
+          RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RELEASE_GPG_PASSPHRASE:-}" ]; then
+            echo "::error::RELEASE_GPG_PASSPHRASE is required to sign release assets."
+            exit 1
+          fi
+
+          {
+            echo "${{ steps.metadata.outputs.sha256 }}  codex-ime-guard-${{ steps.metadata.outputs.tag }}.tar.gz"
+            cp Formula/codex-ime-guard.rb codex-ime-guard.rb
+            shasum -a 256 codex-ime-guard.rb
+          } > SHA256SUMS
+
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$RELEASE_GPG_PASSPHRASE" \
+            --local-user "$RELEASE_GPG_FINGERPRINT" \
+            --armor --detach-sign codex-ime-guard.rb
+
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$RELEASE_GPG_PASSPHRASE" \
+            --local-user "$RELEASE_GPG_FINGERPRINT" \
+            --armor --detach-sign SHA256SUMS
+
+          gpg --batch --verify codex-ime-guard.rb.asc codex-ime-guard.rb
+          gpg --batch --verify SHA256SUMS.asc SHA256SUMS
 
       - name: Prepare local Homebrew tap
         run: |
@@ -91,13 +226,21 @@ jobs:
 
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release edit "$tag" --notes "$notes"
-            gh release upload "$tag" Formula/codex-ime-guard.rb --clobber
+            gh release upload "$tag" \
+              codex-ime-guard.rb \
+              codex-ime-guard.rb.asc \
+              SHA256SUMS \
+              SHA256SUMS.asc \
+              --clobber
           else
             gh release create "$tag" \
               --verify-tag \
               --title "$tag" \
               --notes "$notes" \
-              Formula/codex-ime-guard.rb
+              codex-ime-guard.rb \
+              codex-ime-guard.rb.asc \
+              SHA256SUMS \
+              SHA256SUMS.asc
           fi
 
       - name: Publish formula to Homebrew tap
@@ -134,3 +277,20 @@ jobs:
           git -C "$tap_dir" add Formula/codex-ime-guard.rb
           git -C "$tap_dir" commit -m "Update codex-ime-guard to ${{ steps.metadata.outputs.tag }}"
           git -C "$tap_dir" push origin HEAD:main
+
+      - name: Verify published Homebrew tap
+        run: |
+          set -euo pipefail
+
+          brew services stop codex-ime-guard || true
+          brew uninstall codex-ime-guard || true
+          brew untap "${TAP_NAME}" || true
+
+          brew tap "${TAP_NAME}" "https://github.com/${TAP_REPOSITORY}.git"
+          brew audit --strict --formula "${TAP_NAME}/codex-ime-guard"
+          brew install --build-from-source "${TAP_NAME}/codex-ime-guard"
+          test "$(codex-ime-guard --version)" = "codex-ime-guard ${{ steps.metadata.outputs.version }}"
+          brew services start codex-ime-guard
+          brew services list | grep -F codex-ime-guard
+          brew services stop codex-ime-guard
+          brew uninstall codex-ime-guard
