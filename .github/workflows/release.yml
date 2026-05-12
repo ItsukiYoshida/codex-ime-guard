@@ -90,6 +90,7 @@ jobs:
           notes="Homebrew Formula SHA256: ${{ steps.metadata.outputs.sha256 }}"
 
           if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes "$notes"
             gh release upload "$tag" Formula/codex-ime-guard.rb --clobber
           else
             gh release create "$tag" \
