@@ -112,17 +112,24 @@ jobs:
 
           tap_dir="${RUNNER_TEMP}/homebrew-tap"
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPOSITORY}.git" "$tap_dir"
+
+          if git -C "$tap_dir" rev-parse --verify HEAD >/dev/null 2>&1; then
+            git -C "$tap_dir" checkout main
+          else
+            git -C "$tap_dir" checkout --orphan main
+          fi
+
           mkdir -p "$tap_dir/Formula"
           cp Formula/codex-ime-guard.rb "$tap_dir/Formula/codex-ime-guard.rb"
 
           git -C "$tap_dir" config user.name "github-actions[bot]"
           git -C "$tap_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if git -C "$tap_dir" diff --quiet -- Formula/codex-ime-guard.rb; then
+          if [ -z "$(git -C "$tap_dir" status --porcelain -- Formula/codex-ime-guard.rb)" ]; then
             echo "Formula is already up to date."
             exit 0
           fi
 
           git -C "$tap_dir" add Formula/codex-ime-guard.rb
           git -C "$tap_dir" commit -m "Update codex-ime-guard to ${{ steps.metadata.outputs.tag }}"
-          git -C "$tap_dir" push
+          git -C "$tap_dir" push origin HEAD:main
