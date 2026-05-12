@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+env:
+  TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY || format('{0}/homebrew-tap', github.repository_owner) }}
+
+jobs:
+  release:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: brew install just
+
+      - name: Run project checks
+        run: just check
+
+      - name: Resolve release metadata
+        id: metadata
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          owner="${GITHUB_REPOSITORY_OWNER}"
+          repo="${GITHUB_REPOSITORY#*/}"
+
+          test "$tag" != "$version"
+          test "$(platforms/macos/.build/release/codex-ime-guard --version)" = "codex-ime-guard $version"
+
+          tarball_url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${tag}.tar.gz"
+          sha256="$(curl -fsSL "$tarball_url" | shasum -a 256 | awk '{print $1}')"
+
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "owner=$owner"
+            echo "repo=$repo"
+            echo "sha256=$sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate Homebrew formula
+        run: |
+          set -euo pipefail
+          scripts/homebrew/generate-formula.sh \
+            --owner "${{ steps.metadata.outputs.owner }}" \
+            --repo "${{ steps.metadata.outputs.repo }}" \
+            --version "${{ steps.metadata.outputs.version }}" \
+            --sha256 "${{ steps.metadata.outputs.sha256 }}" \
+            --output Formula/codex-ime-guard.rb
+
+      - name: Audit Homebrew formula
+        run: brew audit --strict --formula Formula/codex-ime-guard.rb
+
+      - name: Install Homebrew formula from source
+        run: |
+          set -euo pipefail
+          brew install --build-from-source Formula/codex-ime-guard.rb
+          test "$(codex-ime-guard --version)" = "codex-ime-guard ${{ steps.metadata.outputs.version }}"
+
+      - name: Smoke test Homebrew service definition
+        run: |
+          set -euo pipefail
+          brew services start codex-ime-guard
+          brew services list | grep -F codex-ime-guard
+          brew services stop codex-ime-guard
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.metadata.outputs.tag }}"
+          notes="Homebrew Formula SHA256: ${{ steps.metadata.outputs.sha256 }}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" Formula/codex-ime-guard.rb --clobber
+          else
+            gh release create "$tag" \
+              --verify-tag \
+              --title "$tag" \
+              --notes "$notes" \
+              Formula/codex-ime-guard.rb
+          fi
+
+      - name: Publish formula to Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN is not set. Skipping tap update for ${TAP_REPOSITORY}."
+            exit 0
+          fi
+
+          tap_dir="${RUNNER_TEMP}/homebrew-tap"
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPOSITORY}.git" "$tap_dir"
+          mkdir -p "$tap_dir/Formula"
+          cp Formula/codex-ime-guard.rb "$tap_dir/Formula/codex-ime-guard.rb"
+
+          git -C "$tap_dir" config user.name "github-actions[bot]"
+          git -C "$tap_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git -C "$tap_dir" diff --quiet -- Formula/codex-ime-guard.rb; then
+            echo "Formula is already up to date."
+            exit 0
+          fi
+
+          git -C "$tap_dir" add Formula/codex-ime-guard.rb
+          git -C "$tap_dir" commit -m "Update codex-ime-guard to ${{ steps.metadata.outputs.tag }}"
+          git -C "$tap_dir" push

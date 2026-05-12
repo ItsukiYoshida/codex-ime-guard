@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  check:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install just
+        run: brew install just
+
+      - name: Run project checks
+        run: just check
+
+      - name: Verify metadata commands
+        run: |
+          set -euo pipefail
+          test "$(platforms/macos/.build/release/codex-ime-guard --version)" = "codex-ime-guard 0.1.0"
+          test "$(platforms/macos/.build/release/codex-ime-guard --help)" = "Usage: codex-ime-guard [--version] [--help]"
