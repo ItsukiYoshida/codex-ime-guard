@@ -4,6 +4,9 @@ import Carbon
 import Foundation
 
 private let defaultAsciiSource = "com.apple.keylayout.ABC"
+private let appName = "codex-ime-guard"
+private let appVersion = "0.1.0"
+private let usage = "Usage: codex-ime-guard [--version] [--help]"
 private let defaultTargetBundleIDs: Set<String> = [
     "com.apple.Terminal",
     "com.googlecode.iterm2",
@@ -201,3 +204,19 @@ func runImeGuard() {
         exit(1)
     }
 }
+
+private func runCommandLine(_ arguments: [String]) {
+    switch arguments {
+    case []:
+        runImeGuard()
+    case ["--version"]:
+        print("\(appName) \(appVersion)")
+    case ["--help"]:
+        print(usage)
+    default:
+        fputs("\(usage)\n", stderr)
+        exit(64)
+    }
+}
+
+runCommandLine(Array(CommandLine.arguments.dropFirst()))
