@@ -5,7 +5,7 @@ import Foundation
 
 private let defaultAsciiSource = "com.apple.keylayout.ABC"
 private let appName = "codex-ime-guard"
-private let appVersion = "0.1.0"
+private let appVersion = "0.1.1"
 private let usage = "Usage: codex-ime-guard [--version] [--help]"
 private let defaultTargetBundleIDs: Set<String> = [
     "com.apple.Terminal",
